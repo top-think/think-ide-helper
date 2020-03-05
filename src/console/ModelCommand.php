@@ -333,11 +333,6 @@ class ModelCommand extends Command
         $context     = (new ContextFactory())->createFromReflector($class);
         $summary     = "Class {$classname}";
 
-        $fqsenResolver      = new FqsenResolver();
-        $tagFactory         = new StandardTagFactory($fqsenResolver);
-        $descriptionFactory = new DescriptionFactory($tagFactory);
-        $typeResolver       = new TypeResolver($fqsenResolver);
-
         $properties = [];
         $methods    = [];
         $tags       = [];
@@ -371,22 +366,32 @@ class ModelCommand extends Command
 
             }
         }
+
+        $fqsenResolver      = new FqsenResolver();
+        $tagFactory         = new StandardTagFactory($fqsenResolver);
+        $descriptionFactory = new DescriptionFactory($tagFactory);
+
+        $tagFactory->addService($descriptionFactory);
+        $tagFactory->addService(new TypeResolver($fqsenResolver));
+
         foreach ($this->properties as $name => $property) {
             if (in_array($name, $properties)) {
                 continue;
             }
-            $name = "\${$name}";
-            $body = trim("{$property['type']} {$name} {$property['comment']}");
 
             if ($property['read'] && $property['write']) {
-                $tag = DocBlock\Tags\Property::create($body, $typeResolver, $descriptionFactory, $context);
+                $attr = 'property';
             } elseif ($property['write']) {
-                $tag = DocBlock\Tags\PropertyWrite::create($body, $typeResolver, $descriptionFactory, $context);
+                $attr = 'property-write';
             } else {
-                $tag = DocBlock\Tags\PropertyRead::create($body, $typeResolver, $descriptionFactory, $context);
+                $attr = 'property-read';
             }
 
-            $tags[] = $tag;
+            //TODO 属性转驼峰
+
+            $tagLine = trim("@{$attr} {$property['type']} \${$name} {$property['comment']}");
+
+            $tags[] = $tagFactory->create($tagLine, $context);
         }
 
         ksort($this->methods);
@@ -398,8 +403,7 @@ class ModelCommand extends Command
 
             $arguments = implode(', ', $method['arguments']);
 
-            $tag    = DocBlock\Tags\Method::create("static {$method['type']} {$name}({$arguments})", $typeResolver, $descriptionFactory, $context);
-            $tags[] = $tag;
+            $tags[] = $tagFactory->create("@method static {$method['type']} {$name}({$arguments})", $context);
         }
 
         $phpdoc = new DocBlock($summary, null, $tags, $context);
