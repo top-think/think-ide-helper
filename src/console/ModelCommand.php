@@ -1,6 +1,6 @@
 <?php
 
-namespace think\ide;
+namespace think\ide\console;
 
 use Exception;
 use phpDocumentor\Reflection\DocBlock;
