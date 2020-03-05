@@ -17,5 +17,12 @@
         "psr-4": {
             "think\\ide\\": "src"
         }
+    },
+    "extra": {
+        "think": {
+            "services": [
+                "think\\ide\\Service"
+            ]
+        }
     }
 }
