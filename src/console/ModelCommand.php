@@ -3,6 +3,7 @@
 namespace think\ide\console;
 
 use Exception;
+use InvalidArgumentException;
 use phpDocumentor\Reflection\DocBlock;
 use phpDocumentor\Reflection\DocBlock\DescriptionFactory;
 use phpDocumentor\Reflection\DocBlock\Serializer as DocBlockSerializer;
@@ -11,11 +12,13 @@ use phpDocumentor\Reflection\DocBlockFactory;
 use phpDocumentor\Reflection\FqsenResolver;
 use phpDocumentor\Reflection\TypeResolver;
 use phpDocumentor\Reflection\Types\Context;
+use phpDocumentor\Reflection\Types\ContextFactory;
 use phpDocumentor\Reflection\Types\Self_;
 use phpDocumentor\Reflection\Types\Static_;
 use phpDocumentor\Reflection\Types\This;
 use ReflectionClass;
 use ReflectionMethod;
+use ReflectionParameter;
 use Symfony\Component\ClassLoader\ClassMapGenerator;
 use think\console\Command;
 use think\console\input\Argument;
@@ -33,6 +36,7 @@ use think\model\relation\HasOne;
 use think\model\relation\MorphMany;
 use think\model\relation\MorphOne;
 use think\model\relation\MorphTo;
+use Throwable;
 
 class ModelCommand extends Command
 {
@@ -112,10 +116,13 @@ class ModelCommand extends Command
                         // 忽略接口和抽象类
                         continue;
                     }
+
+                    /** @var Model $model */
                     $model = new $name;
-                    $this->getPropertiesFromTable($name, $model);
-                    $this->getPropertiesFromMethods($name, $model);
-                    $this->createPhpDocs($name);
+
+                    $this->getPropertiesFromTable($reflectionClass, $model);
+                    $this->getPropertiesFromMethods($reflectionClass, $model);
+                    $this->createPhpDocs($reflectionClass);
                     $ignore[] = $name;
                 } catch (Exception $e) {
                     $this->output->error("Exception: " . $e->getMessage() . "\nCould not analyze class $name.");
@@ -126,12 +133,12 @@ class ModelCommand extends Command
 
     /**
      * 从数据库读取字段信息
-     * @param string $class
+     * @param ReflectionClass $class
      * @param Model $model
      */
-    protected function getPropertiesFromTable($class, Model $model)
+    protected function getPropertiesFromTable(ReflectionClass $class, Model $model)
     {
-        $properties = (new ReflectionClass($class))->getDefaultProperties();
+        $properties = $class->getDefaultProperties();
 
         $dateFormat = empty($properties['dateFormat']) ? $this->app->config->get('database.datetime_format') : $properties['dateFormat'];
         try {
@@ -246,17 +253,16 @@ class ModelCommand extends Command
 
     /**
      * 自动生成获取器和修改器以及关联对象的属性信息
-     * @param $class
-     * @param $model
+     * @param ReflectionClass $class
+     * @param Model $model
      */
-    protected function getPropertiesFromMethods($class, $model)
+    protected function getPropertiesFromMethods(ReflectionClass $class, Model $model)
     {
-        $classRef = new ReflectionClass($class);
-        $methods  = $classRef->getMethods();
+        $methods = $class->getMethods();
 
         foreach ($methods as $method) {
 
-            if ($method->getDeclaringClass()->getName() == $classRef->getName()) {
+            if ($method->getDeclaringClass()->getName() == $class->getName()) {
 
                 $methodName = $method->getName();
                 if (Str::startsWith($methodName, 'get') && Str::endsWith(
@@ -309,7 +315,7 @@ class ModelCommand extends Command
                             }
                         }
                     } catch (Exception $e) {
-                    } catch (\Throwable $e) {
+                    } catch (Throwable $e) {
                     }
                 }
             }
@@ -317,17 +323,14 @@ class ModelCommand extends Command
     }
 
     /**
-     * @param string $class
-     * @return string
+     * @param ReflectionClass $class
      */
-    protected function createPhpDocs($class)
+    protected function createPhpDocs(ReflectionClass $class)
     {
 
-        $reflection  = new ReflectionClass($class);
-        $namespace   = $reflection->getNamespaceName();
-        $classname   = $reflection->getShortName();
-        $originalDoc = $reflection->getDocComment();
-        $context     = new Context($namespace);
+        $classname   = $class->getShortName();
+        $originalDoc = $class->getDocComment();
+        $context     = (new ContextFactory())->createFromReflector($class);
         $summary     = "Class {$classname}";
 
         $fqsenResolver      = new FqsenResolver();
@@ -341,7 +344,7 @@ class ModelCommand extends Command
         if (!$this->reset) {
             try {
                 //读取文件注释
-                $phpdoc = DocBlockFactory::createInstance()->create($reflection, $context);
+                $phpdoc = DocBlockFactory::createInstance()->create($class, $context);
 
                 $summary    = $phpdoc->getSummary();
                 $properties = [];
@@ -364,7 +367,7 @@ class ModelCommand extends Command
                         }
                     }
                 }
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
 
             }
         }
@@ -405,7 +408,7 @@ class ModelCommand extends Command
 
         $docComment = $serializer->getDocComment($phpdoc);
 
-        $filename = $reflection->getFileName();
+        $filename = $class->getFileName();
 
         $contents = file_get_contents($filename);
         if ($originalDoc) {
@@ -453,7 +456,7 @@ class ModelCommand extends Command
         }
     }
 
-    protected function getReturnTypeFromDocBlock(\ReflectionMethod $reflection)
+    protected function getReturnTypeFromDocBlock(ReflectionMethod $reflection)
     {
         $type = null;
         try {
@@ -466,7 +469,7 @@ class ModelCommand extends Command
                     $type = "\\" . $reflection->getDeclaringClass()->getName();
                 }
             }
-        } catch (\InvalidArgumentException $e) {
+        } catch (InvalidArgumentException $e) {
 
         }
         return is_null($type) ? null : (string) $type;
@@ -481,7 +484,7 @@ class ModelCommand extends Command
         //Loop through the default values for paremeters, and make the correct output string
         $params            = [];
         $paramsWithDefault = [];
-        /** @var \ReflectionParameter $param */
+        /** @var ReflectionParameter $param */
         foreach ($method->getParameters() as $param) {
             $paramClass = $param->getClass();
             $paramStr   = (!is_null($paramClass) ? '\\' . $paramClass->getName() . ' ' : '') . '$' . $param->getName();
