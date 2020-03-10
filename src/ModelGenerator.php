@@ -168,7 +168,7 @@ class ModelGenerator
 
                 if (in_array($name, [$properties['createTime'], $properties['updateTime']])) {
                     if (false !== strpos($dateFormat, '\\')) {
-                        $type = "\\" . $dateFormat;
+                        $type = $dateFormat;
                     } else {
                         $type = 'string';
                     }
@@ -188,7 +188,7 @@ class ModelGenerator
                             $format = !empty($param) ? $param : $dateFormat;
 
                             if (false !== strpos($format, '\\')) {
-                                $type = "\\" . $format;
+                                $type = $format;
                             } else {
                                 $type = 'string';
                             }
@@ -199,10 +199,6 @@ class ModelGenerator
                         case 'serialize':
                             $type = 'mixed';
                             break;
-                        default:
-                            if (false !== strpos($type, '\\')) {
-                                $type = "\\" . $type;
-                            }
                     }
                 } else {
                     if (!preg_match('/^([\w]+)(\(([\d]+)*(,([\d]+))*\))*(.+)*$/', $field['type'], $matches)) {
@@ -311,11 +307,11 @@ class ModelGenerator
 
                             $name = Str::snake($methodName);
                             if ($return instanceof HasOne || $return instanceof BelongsTo || $return instanceof MorphOne || $return instanceof HasOneThrough) {
-                                $this->addProperty($name, "\\" . get_class($return->getModel()), true, null);
+                                $this->addProperty($name, get_class($return->getModel()), true, null);
                             }
 
                             if ($return instanceof HasMany || $return instanceof HasManyThrough || $return instanceof BelongsToMany) {
-                                $this->addProperty($name, "\\" . get_class($return->getModel()) . "[]", true, null);
+                                $this->addProperty($name, get_class($return->getModel()) . "[]", true, null);
                             }
 
                             if ($return instanceof MorphTo || $return instanceof MorphMany) {
@@ -323,7 +319,7 @@ class ModelGenerator
                             }
 
                             if ($return instanceof MorphToMany) {
-                                $this->addProperty($name, "\\" . Collection::class, true, null);
+                                $this->addProperty($name, Collection::class, true, null);
                             }
                         }
                     } catch (Exception $e) {
@@ -402,7 +398,7 @@ class ModelGenerator
 
             $tagLine = trim("@{$attr} {$property['type']} \${$name} {$property['comment']}");
 
-            $tags[] = $tagFactory->create($tagLine, $context);
+            $tags[] = $tagFactory->create($tagLine);
         }
 
         foreach ($this->methods as $name => $method) {
@@ -412,7 +408,7 @@ class ModelGenerator
 
             $arguments = implode(', ', $method['arguments']);
 
-            $tags[] = $tagFactory->create("@method {$method['static']} {$method['return']} {$name}({$arguments})", $context);
+            $tags[] = $tagFactory->create("@method {$method['static']} {$method['return']} {$name}({$arguments})");
         }
 
         $tags = $this->sortTags($tags);
@@ -472,7 +468,7 @@ class ModelGenerator
         /** @var ReflectionParameter $param */
         foreach ($method->getParameters() as $param) {
             $paramClass = $param->getClass();
-            $paramStr   = (!is_null($paramClass) ? '\\' . $paramClass->getName() . ' ' : '') . '$' . $param->getName();
+            $paramStr   = (!is_null($paramClass) ? $paramClass->getName() . ' ' : '') . '$' . $param->getName();
             $params[]   = $paramStr;
             if ($param->isOptional() && $param->isDefaultValueAvailable()) {
                 $default = $param->getDefaultValue();
@@ -503,7 +499,7 @@ class ModelGenerator
                 $returnTag = $phpdoc->getTagsByName('return')[0];
                 $type      = $returnTag->getType();
                 if ($type instanceof This || $type instanceof Static_ || $type instanceof Self_) {
-                    $type = "\\" . $reflection->getDeclaringClass()->getName();
+                    $type = $reflection->getDeclaringClass()->getName();
                 }
             }
         } catch (InvalidArgumentException $e) {
