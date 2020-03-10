@@ -466,9 +466,10 @@ class ModelGenerator
         $paramsWithDefault = [];
         /** @var ReflectionParameter $param */
         foreach ($method->getParameters() as $param) {
-            $paramClass = $param->getClass();
-            $paramStr   = (!is_null($paramClass) ? $paramClass->getName() . ' ' : '') . '$' . $param->getName();
-            $params[]   = $paramStr;
+            $paramType = $param->getType();
+
+            $paramStr = (!is_null($paramType) ? $paramType->getName() : 'mixed') . ' $' . $param->getName();
+            $params[] = $paramStr;
             if ($param->isOptional() && $param->isDefaultValueAvailable()) {
                 $default = $param->getDefaultValue();
                 if (is_bool($default)) {
