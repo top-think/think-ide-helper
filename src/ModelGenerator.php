@@ -24,15 +24,18 @@ use think\db\Query;
 use think\helper\Arr;
 use think\helper\Str;
 use think\Model;
+use think\model\Collection;
 use think\model\Relation;
 use think\model\relation\BelongsTo;
 use think\model\relation\BelongsToMany;
 use think\model\relation\HasMany;
 use think\model\relation\HasManyThrough;
 use think\model\relation\HasOne;
+use think\model\relation\HasOneThrough;
 use think\model\relation\MorphMany;
 use think\model\relation\MorphOne;
 use think\model\relation\MorphTo;
+use think\model\relation\MorphToMany;
 use Throwable;
 
 class ModelGenerator
@@ -98,12 +101,12 @@ class ModelGenerator
         }
     }
 
-    public function addMethod($name, $return = 'mixed', $arguments = [], $type = 'static')
+    public function addMethod($name, $return = 'mixed', $arguments = [], $static = true)
     {
         $methods = array_change_key_case($this->methods, CASE_LOWER);
         if (!isset($methods[strtolower($name)])) {
             $this->methods[$name]              = [];
-            $this->methods[$name]['type']      = $type;
+            $this->methods[$name]['static']    = $static ? 'static' : '';
             $this->methods[$name]['arguments'] = $arguments;
             $this->methods[$name]['return']    = $return;
         }
@@ -129,7 +132,7 @@ class ModelGenerator
             return;
         }
 
-        $this->model = new ($this->class);
+        $this->model = new $this->class;
 
         $this->getPropertiesFromTable();
         $this->getPropertiesFromMethods();
@@ -307,7 +310,7 @@ class ModelGenerator
                         if ($return instanceof Relation) {
 
                             $name = Str::snake($methodName);
-                            if ($return instanceof HasOne || $return instanceof BelongsTo || $return instanceof MorphOne) {
+                            if ($return instanceof HasOne || $return instanceof BelongsTo || $return instanceof MorphOne || $return instanceof HasOneThrough) {
                                 $this->addProperty($name, "\\" . get_class($return->getModel()), true, null);
                             }
 
@@ -317,6 +320,10 @@ class ModelGenerator
 
                             if ($return instanceof MorphTo || $return instanceof MorphMany) {
                                 $this->addProperty($name, "mixed", true, null);
+                            }
+
+                            if ($return instanceof MorphToMany) {
+                                $this->addProperty($name, "\\" . Collection::class, true, null);
                             }
                         }
                     } catch (Exception $e) {
@@ -405,7 +412,7 @@ class ModelGenerator
 
             $arguments = implode(', ', $method['arguments']);
 
-            $tags[] = $tagFactory->create("@method {$method['type']} {$method['return']} {$name}({$arguments})", $context);
+            $tags[] = $tagFactory->create("@method {$method['static']} {$method['return']} {$name}({$arguments})", $context);
         }
 
         $tags = $this->sortTags($tags);
