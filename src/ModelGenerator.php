@@ -343,35 +343,34 @@ class ModelGenerator
         $properties = [];
         $methods    = [];
         $tags       = [];
-        if (!$this->reset) {
-            try {
-                //读取文件注释
-                $phpdoc = DocBlockFactory::createInstance()->create($this->reflection, $context);
 
-                $summary    = $phpdoc->getSummary();
-                $properties = [];
-                $methods    = [];
-                $tags       = $phpdoc->getTags();
-                foreach ($tags as $key => $tag) {
-                    if ($tag instanceof DocBlock\Tags\Property || $tag instanceof DocBlock\Tags\PropertyRead || $tag instanceof DocBlock\Tags\PropertyWrite) {
-                        if ($this->overwrite && array_key_exists($tag->getVariableName(), $this->properties)) {
-                            //覆盖原来的
-                            unset($tags[$key]);
-                        } else {
-                            $properties[] = $tag->getVariableName();
-                        }
-                    } elseif ($tag instanceof DocBlock\Tags\Method) {
-                        if ($this->overwrite && array_key_exists($tag->getMethodName(), $this->methods)) {
-                            //覆盖原来的
-                            unset($tags[$key]);
-                        } else {
-                            $methods[] = $tag->getMethodName();
-                        }
+        try {
+            //读取文件注释
+            $phpdoc = DocBlockFactory::createInstance()->create($this->reflection, $context);
+
+            $summary    = $phpdoc->getSummary();
+            $properties = [];
+            $methods    = [];
+            $tags       = $phpdoc->getTags();
+            foreach ($tags as $key => $tag) {
+                if ($tag instanceof DocBlock\Tags\Property || $tag instanceof DocBlock\Tags\PropertyRead || $tag instanceof DocBlock\Tags\PropertyWrite) {
+                    if (($this->overwrite && array_key_exists($tag->getVariableName(), $this->properties)) || $this->reset) {
+                        //覆盖原来的
+                        unset($tags[$key]);
+                    } else {
+                        $properties[] = $tag->getVariableName();
+                    }
+                } elseif ($tag instanceof DocBlock\Tags\Method) {
+                    if (($this->overwrite && array_key_exists($tag->getMethodName(), $this->methods)) || $this->reset) {
+                        //覆盖原来的
+                        unset($tags[$key]);
+                    } else {
+                        $methods[] = $tag->getMethodName();
                     }
                 }
-            } catch (InvalidArgumentException $e) {
-
             }
+        } catch (InvalidArgumentException $e) {
+
         }
 
         $fqsenResolver      = new FqsenResolver();
