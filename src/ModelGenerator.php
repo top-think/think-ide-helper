@@ -311,7 +311,7 @@ class ModelGenerator
                             }
 
                             if ($return instanceof HasMany || $return instanceof HasManyThrough || $return instanceof BelongsToMany) {
-                                $this->addProperty($name, get_class($return->getModel()) . "[]", true, null);
+                                $this->addProperty($name, get_class($return->getModel()) . "[]|\\think\\Collection", true, null);
                             }
 
                             if ($return instanceof MorphTo || $return instanceof MorphMany) {
