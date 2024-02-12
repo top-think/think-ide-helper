@@ -258,6 +258,109 @@ class ModelGenerator
     }
 
     /**
+     * 返回方法是否是获取器
+     * @param string $name
+     * @return bool
+     */
+    protected function isGetterMethod(string $name): bool
+    {
+        return Str::startsWith($name, 'get') && Str::endsWith($name, 'Attr') && 'getAttr' !== $name;
+    }
+
+    /**
+     * 是否是修改器
+     * @param string $name
+     * @return bool
+     */
+    protected function isSetterMethod(string $name): bool
+    {
+        return Str::startsWith($name, 'set') && Str::endsWith($name, 'Attr') && 'setAttr' !== $name;
+    }
+
+    /**
+     * 是否是关联关系方法
+     * @param ReflectionMethod $method
+     * @return bool
+     */
+    protected function isRelationMethod(ReflectionMethod $method): bool
+    {
+        if (!$method->isPublic() || $method->isAbstract() || $method->isStatic() || $method->getNumberOfParameters() !== 0) {
+            return false;
+        }
+
+        $type = $this->getReturnTypeFromReflection($method);
+
+        if (strpos($type, '\\') === false) {
+            $type = $this->getReturnTypeFromDocBlock($method);
+        }
+
+        if (is_null($type) || strpos($type, '\\') === false) {
+            goto spl;
+        }
+
+        $type = ltrim(ltrim($type, '\\'), '/');
+
+        $relationClasses = [
+            HasOne::class,
+            BelongsTo::class,
+            MorphOne::class,
+            HasOneThrough::class,
+            HasMany::class,
+            HasManyThrough::class,
+            BelongsToMany::class,
+            MorphTo::class,
+            MorphMany::class,
+            MorphToMany::class,
+        ];
+
+        if (in_array($type, $relationClasses)) {
+            return true;
+        }
+
+        spl:
+
+        $relationMethods = [
+            'hasOne',
+            'belongsTo',
+            'hasMany',
+            'hasManyThrough',
+            'hasOneThrough',
+            'belongsToMany',
+            'morphOne',
+            'morphMany',
+            'morphTo',
+            'morphToMany',
+        ];
+
+        $file = new \SplFileObject($method->getFileName());
+        $file->seek($method->getStartLine() - 1);
+        $code = '';
+        while ($file->key() < $method->getEndLine()) {
+            $code .= trim($file->current());
+            $file->next();
+        }
+
+        $contains = false;
+
+        foreach ($relationMethods as $relationMethod) {
+            if (strpos($code, '$this->' . $relationMethod . '(') !== false) {
+                $contains = true;
+                break;
+            }
+        }
+
+        if (!$contains) {
+            return false;
+        }
+
+        try {
+            return $method->invoke($this->model) instanceof Relation;
+        } catch (\ReflectionException $e) {
+            return false;
+        }
+    }
+
+    /**
      * 自动生成获取器和修改器以及关联对象的属性信息
      */
     protected function getPropertiesFromMethods()
@@ -265,66 +368,62 @@ class ModelGenerator
         $methods = $this->reflection->getMethods();
 
         foreach ($methods as $method) {
+            if ($method->getDeclaringClass()->getName() !== $this->reflection->getName()) {
+                continue;
+            }
 
-            if ($method->getDeclaringClass()->getName() == $this->reflection->getName()) {
+            $methodName = $method->getName();
 
-                $methodName = $method->getName();
-                if (Str::startsWith($methodName, 'get') && Str::endsWith(
-                        $methodName,
-                        'Attr'
-                    ) && 'getAttr' !== $methodName) {
-                    //获取器
-                    $name = Str::snake(substr($methodName, 3, -4));
+            if ($this->isGetterMethod($methodName)) {
+                //获取器
+                $name = Str::snake(substr($methodName, 3, -4));
 
-                    if (!empty($name)) {
-                        $type = $this->getReturnTypeFromDocBlock($method);
-                        $this->addProperty($name, $type, true, null);
+                if (!empty($name)) {
+                    $type = $this->hasReturnTypeFromDocBlock($method) ? $this->getReturnTypeFromDocBlock($method) : $this->getReturnTypeFromReflection($method);
+
+                    $this->addProperty($name, $type, true, null);
+                }
+            } elseif ($this->isSetterMethod($methodName)) {
+                //修改器
+                $name = Str::snake(substr($methodName, 3, -4));
+                if (!empty($name)) {
+                    $this->addProperty($name, null, null, true);
+                }
+            } elseif (Str::startsWith($methodName, 'scope')) {
+                //查询范围
+                $name = Str::camel(substr($methodName, 5));
+
+                if (!empty($name)) {
+                    $args = $this->getParameters($method);
+                    array_shift($args);
+                    $this->addMethod($name, Query::class, $args);
+                }
+            } elseif ($this->isRelationMethod($method)) {
+                //关联对象
+                try {
+                    $return = $method->invoke($this->model);
+
+                    $name = Str::snake($methodName);
+
+                    if ($return instanceof HasOne || $return instanceof BelongsTo || $return instanceof MorphOne || $return instanceof HasOneThrough) {
+                        $this->addProperty($name, get_class($return->getModel()) . '|null', true, null);
                     }
-                } elseif (Str::startsWith($methodName, 'set') && Str::endsWith(
-                        $methodName,
-                        'Attr'
-                    ) && 'setAttr' !== $methodName) {
-                    //修改器
-                    $name = Str::snake(substr($methodName, 3, -4));
-                    if (!empty($name)) {
-                        $this->addProperty($name, null, null, true);
+
+                    if ($return instanceof HasMany || $return instanceof HasManyThrough || $return instanceof BelongsToMany || $return instanceof MorphToMany) {
+                        $relationModel = get_class($return->getModel());
+
+                        $refection = new ReflectionClass($relationModel);
+
+                        $resultSetType = $refection->getProperty('resultSetType')->getValue($refection->newInstance()) ?: Collection::class;
+
+                        $this->addProperty($name, $resultSetType . '<int, ' . $relationModel . '>|' . $relationModel . '[]', true, null);
                     }
-                } elseif (Str::startsWith($methodName, 'scope')) {
-                    //查询范围
-                    $name = Str::camel(substr($methodName, 5));
 
-                    if (!empty($name)) {
-                        $args = $this->getParameters($method);
-                        array_shift($args);
-                        $this->addMethod($name, Query::class, $args);
+                    if ($return instanceof MorphTo || $return instanceof MorphMany) {
+                        $this->addProperty($name, "mixed", true, null);
                     }
-                } elseif ($method->isPublic() && $method->getNumberOfRequiredParameters() == 0) {
-                    //关联对象
-                    try {
-                        $return = $method->invoke($this->model);
-
-                        if ($return instanceof Relation) {
-
-                            $name = Str::snake($methodName);
-                            if ($return instanceof HasOne || $return instanceof BelongsTo || $return instanceof MorphOne || $return instanceof HasOneThrough) {
-                                $this->addProperty($name, get_class($return->getModel()), true, null);
-                            }
-
-                            if ($return instanceof HasMany || $return instanceof HasManyThrough || $return instanceof BelongsToMany) {
-                                $this->addProperty($name, get_class($return->getModel()) . "[]", true, null);
-                            }
-
-                            if ($return instanceof MorphTo || $return instanceof MorphMany) {
-                                $this->addProperty($name, "mixed", true, null);
-                            }
-
-                            if ($return instanceof MorphToMany) {
-                                $this->addProperty($name, Collection::class, true, null);
-                            }
-                        }
-                    } catch (Exception $e) {
-                    } catch (Throwable $e) {
-                    }
+                } catch (Exception $e) {
+                } catch (Throwable $e) {
                 }
             }
         }
@@ -488,7 +587,29 @@ class ModelGenerator
         return $paramsWithDefault;
     }
 
-    protected function getReturnTypeFromDocBlock(ReflectionMethod $reflection)
+    /**
+     * phpdoc 中是否有 return
+     * @param ReflectionMethod $reflection
+     * @return false
+     */
+    protected function hasReturnTypeFromDocBlock(ReflectionMethod $reflection): bool
+    {
+        try {
+            $context = (new ContextFactory())->createFromReflector($reflection->getDeclaringClass());
+            $phpdoc  = DocBlockFactory::createInstance()->create($reflection, $context);
+
+            return $phpdoc->hasTag('return');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * 从docblock里获取返回类型
+     * @param ReflectionMethod $reflection
+     * @return string|null
+     */
+    protected function getReturnTypeFromDocBlock(ReflectionMethod $reflection): ?string
     {
         $type = null;
         try {
@@ -506,5 +627,19 @@ class ModelGenerator
 
         }
         return is_null($type) ? null : (string) $type;
+    }
+
+    /**
+     * 从反射里获取返回类型
+     * @param ReflectionMethod $reflection
+     * @return string
+     */
+    protected function getReturnTypeFromReflection(ReflectionMethod $reflection): string
+    {
+        try {
+            return $reflection->getReturnType() ? $reflection->getReturnType()->getName() : 'mixed';
+        } catch (Throwable $e) {
+            return 'mixed';
+        }
     }
 }
