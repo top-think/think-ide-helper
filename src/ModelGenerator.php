@@ -8,6 +8,14 @@ use phpDocumentor\Reflection\DocBlock;
 use phpDocumentor\Reflection\DocBlock\DescriptionFactory;
 use phpDocumentor\Reflection\DocBlock\Serializer as DocBlockSerializer;
 use phpDocumentor\Reflection\DocBlock\StandardTagFactory;
+use phpDocumentor\Reflection\DocBlock\Tags\Factory\AbstractPHPStanFactory;
+use phpDocumentor\Reflection\DocBlock\Tags\Factory\MethodFactory;
+use phpDocumentor\Reflection\DocBlock\Tags\Factory\ParamFactory;
+use phpDocumentor\Reflection\DocBlock\Tags\Factory\PropertyFactory;
+use phpDocumentor\Reflection\DocBlock\Tags\Factory\PropertyReadFactory;
+use phpDocumentor\Reflection\DocBlock\Tags\Factory\PropertyWriteFactory;
+use phpDocumentor\Reflection\DocBlock\Tags\Factory\ReturnFactory;
+use phpDocumentor\Reflection\DocBlock\Tags\Factory\VarFactory;
 use phpDocumentor\Reflection\DocBlockFactory;
 use phpDocumentor\Reflection\FqsenResolver;
 use phpDocumentor\Reflection\TypeResolver;
@@ -340,13 +348,41 @@ class ModelGenerator
         $context     = (new ContextFactory())->createFromReflector($this->reflection);
         $summary     = "Class {$this->class}";
 
+        $fqsenResolver      = new FqsenResolver();
+        $tagFactory         = new StandardTagFactory($fqsenResolver);
+        $descriptionFactory = new DescriptionFactory($tagFactory);
+        $typeResolver       = new TypeResolver($fqsenResolver);
+
+        $phpstanTagFactory = new AbstractPHPStanFactory(
+            new ParamFactory($typeResolver, $descriptionFactory),
+            new VarFactory($typeResolver, $descriptionFactory),
+            new ReturnFactory($typeResolver, $descriptionFactory),
+            new PropertyFactory($typeResolver, $descriptionFactory),
+            new PropertyReadFactory($typeResolver, $descriptionFactory),
+            new PropertyWriteFactory($typeResolver, $descriptionFactory),
+            new MethodFactory($typeResolver, $descriptionFactory)
+        );
+
+        $tagFactory->addService($descriptionFactory);
+        $tagFactory->addService($typeResolver);
+
+        $tagFactory->registerTagHandler('param', $phpstanTagFactory);
+        $tagFactory->registerTagHandler('var', $phpstanTagFactory);
+        $tagFactory->registerTagHandler('return', $phpstanTagFactory);
+        $tagFactory->registerTagHandler('property', $phpstanTagFactory);
+        $tagFactory->registerTagHandler('property-read', $phpstanTagFactory);
+        $tagFactory->registerTagHandler('property-write', $phpstanTagFactory);
+        $tagFactory->registerTagHandler('method', $phpstanTagFactory);
+
+        $blockFactory = new DocBlockFactory($descriptionFactory, $tagFactory);
+
         $properties = [];
         $methods    = [];
         $tags       = [];
 
         try {
             //读取文件注释
-            $phpdoc = DocBlockFactory::createInstance()->create($this->reflection, $context);
+            $phpdoc = $blockFactory->create($this->reflection, $context);
 
             $summary    = $phpdoc->getSummary();
             $properties = [];
@@ -372,13 +408,6 @@ class ModelGenerator
         } catch (InvalidArgumentException $e) {
 
         }
-
-        $fqsenResolver      = new FqsenResolver();
-        $tagFactory         = new StandardTagFactory($fqsenResolver);
-        $descriptionFactory = new DescriptionFactory($tagFactory);
-
-        $tagFactory->addService($descriptionFactory);
-        $tagFactory->addService(new TypeResolver($fqsenResolver));
 
         foreach ($this->properties as $name => $property) {
             if (in_array($name, $properties)) {
