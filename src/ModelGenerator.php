@@ -170,11 +170,11 @@ class ModelGenerator
 
         if (!empty($fields)) {
             foreach ($fields as $name => $field) {
-                if (in_array($name, (array) $properties['disuse'])) {
+                if (in_array($name, $properties['disuse']??[])) {
                     continue;
                 }
 
-                if (in_array($name, [$properties['createTime'], $properties['updateTime']])) {
+                if (in_array($name, [$properties['createTime']??'create_time', $properties['updateTime']??'update_time'])) {
                     if (false !== strpos($dateFormat, '\\')) {
                         $type = $dateFormat;
                     } else {
