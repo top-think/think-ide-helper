@@ -156,9 +156,6 @@ class ModelGenerator
      */
     protected function getPropertiesFromTable()
     {
-        $properties = $this->reflection->getDefaultProperties();
-
-        $dateFormat = empty($properties['dateFormat']) ? $this->app->config->get('database.datetime_format') : $properties['dateFormat'];
         try {
             $query = $this->model->db();
             if ($query instanceof Query) {
@@ -169,20 +166,21 @@ class ModelGenerator
         }
 
         if (!empty($fields)) {
-            foreach ($fields as $name => $field) {
-                if (in_array($name, (array) $properties['disuse'])) {
-                    continue;
-                }
+            $dateFormat = $this->model->getOption('dateFormat');
+            $createTime = $this->model->getOption('createTime');
+            $updateTime = $this->model->getOption('updateTime');
+            $fieldType  = $this->model->getOption('type');
 
-                if (in_array($name, [$properties['createTime'], $properties['updateTime']])) {
+            foreach ($fields as $name => $field) {
+                if (in_array($name, [$createTime, $updateTime])) {
                     if (false !== strpos($dateFormat, '\\')) {
                         $type = $dateFormat;
                     } else {
                         $type = 'string';
                     }
-                } elseif (!empty($properties['type'][$name])) {
+                } elseif (!empty($fieldType[$name])) {
 
-                    $type = $properties['type'][$name];
+                    $type = $fieldType[$name];
 
                     if (is_array($type)) {
                         [$type, $param] = $type;
